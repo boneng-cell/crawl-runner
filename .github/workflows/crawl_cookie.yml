@@ -1,5 +1,4 @@
-name: Katana Scan (With Cookie)
-
+name: crawl (with cookie)
 on:
   workflow_dispatch:
     inputs:
@@ -33,12 +32,18 @@ jobs:
       - name: Install Katana
         run: go install github.com/projectdiscovery/katana/cmd/katana@v1.0.4
 
-      - name: Run Katana
+      - name: Install Gospider
+        run: go install github.com/jaeles-project/gospider@latest
+
+      - name: Install Hakrawler
+        run: go install github.com/hakluke/hakrawler@latest
+
+      - name: Run Tool
         env:
           TARGET: ${{ github.event.inputs.target }}
           COOKIE: ${{ github.event.inputs.cookie }}
           USE_HEADERS: "true"
-        run: python3 katana_runner.py
+        run: python3 crawl-runner.py
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
