@@ -25,7 +25,8 @@ domain = parsed.hostname
 if parsed.port:
     domain = f"{domain}_{parsed.port}"
 
-output = f"{domain}.txt"
+active_output = f"{domain}_active.txt"
+passive_output = f"{domain}_passive.txt"
 
 headers = []
 if use_headers:
@@ -40,9 +41,12 @@ if cookie:
 
 go_bin = os.path.expanduser("~/go/bin")
 os.environ["PATH"] += os.pathsep + go_bin
+
 katana_file = f"{domain}_katana.txt"
 gospider_file = f"{domain}_gospider.txt"
 hakrawler_file = f"{domain}_hakrawler.txt"
+waymore_file = f"{domain}_waymore.txt"
+urlfinder_file = f"{domain}_urlfinder.txt"
 gospider_dir = f"gospider_{domain}"
 
 def run_katana():
@@ -117,25 +121,50 @@ def run_hakrawler():
         print(f"[WARNING] Hakrawler gagal: {e}")
         return False
 
+def run_waymore():
+    try:
+        print(f"[INFO] Menjalankan Waymore...")
+        cmd = ["waymore", "-i", target, "-mode", "U", "-o", waymore_file]
+        subprocess.run(cmd, check=True, timeout=300)
+        print(f"[INFO] Waymore selesai")
+        return True
+    except Exception as e:
+        print(f"[WARNING] Waymore gagal: {e}")
+        return False
+
+def run_urlfinder():
+    try:
+        print(f"[INFO] Menjalankan Urlfinder...")
+        cmd = ["urlfinder", "-u", target, "-o", urlfinder_file]
+        subprocess.run(cmd, check=True, timeout=300)
+        print(f"[INFO] Urlfinder selesai")
+        return True
+    except Exception as e:
+        print(f"[WARNING] Urlfinder gagal: {e}")
+        return False
+
 print("[INFO] Starting crawling...")
 
-all_results = []
+active_results = []
+passive_results = []
 
 if cookie:
     print("[INFO] Cookie detected → hanya menjalankan Katana")
     success = run_katana()
     if success and os.path.exists(katana_file):
-        all_results = [katana_file]
+        active_results = [katana_file]
     else:
         print("[ERROR] Katana gagal menjalankan tugas")
         sys.exit(1)
 else:
     print("[INFO] No cookie → menjalankan semua crawler paralel")
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
             executor.submit(run_katana): "katana",
             executor.submit(run_gospider): "gospider",
-            executor.submit(run_hakrawler): "hakrawler"
+            executor.submit(run_hakrawler): "hakrawler",
+            executor.submit(run_waymore): "waymore",
+            executor.submit(run_urlfinder): "urlfinder"
         }
         for future in as_completed(futures):
             name = futures[future]
@@ -144,30 +173,19 @@ else:
                 if result:
                     print(f"[INFO] {name} berhasil")
                     if name == "katana" and os.path.exists(katana_file):
-                        all_results.append(katana_file)
+                        active_results.append(katana_file)
                     elif name == "gospider" and os.path.exists(gospider_file):
-                        all_results.append(gospider_file)
+                        active_results.append(gospider_file)
                     elif name == "hakrawler" and os.path.exists(hakrawler_file):
-                        all_results.append(hakrawler_file)
+                        active_results.append(hakrawler_file)
+                    elif name == "waymore" and os.path.exists(waymore_file):
+                        passive_results.append(waymore_file)
+                    elif name == "urlfinder" and os.path.exists(urlfinder_file):
+                        passive_results.append(urlfinder_file)
                 else:
                     print(f"[WARNING] {name} gagal")
             except Exception as e:
                 print(f"[WARNING] {name} error: {e}")
-
-if not all_results:
-    print("[ERROR] Tidak ada hasil dari crawler manapun")
-    sys.exit(1)
-
-print("[INFO] Semua proses selesai, menggabungkan hasil...")
-
-all_lines = []
-for fname in all_results:
-    if os.path.exists(fname):
-        try:
-            with open(fname, "r") as infile:
-                all_lines.extend(infile.readlines())
-        except:
-            pass
 
 static_extensions = (
     '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff', '.psd',
@@ -181,23 +199,40 @@ static_extensions = (
     '.txt', '.md', '.log'
 )
 
-filtered_lines = []
-for line in all_lines:
-    line_stripped = line.strip()
-    if line_stripped:
-        if any(line_stripped.lower().endswith(ext) for ext in static_extensions):
-            continue
-        if any(f"/{ext.lstrip('.')}/" in line_stripped.lower() for ext in static_extensions[:10]):  # sample a few
-            continue
-        filtered_lines.append(line_stripped)
+def process_files(file_list, output_file):
+    if not file_list:
+        return []
+    all_lines = []
+    for fname in file_list:
+        if os.path.exists(fname):
+            try:
+                with open(fname, "r") as infile:
+                    all_lines.extend(infile.readlines())
+            except:
+                pass
+    filtered_lines = []
+    for line in all_lines:
+        line_stripped = line.strip()
+        if line_stripped:
+            if any(line_stripped.lower().endswith(ext) for ext in static_extensions):
+                continue
+            if any(f"/{ext.lstrip('.')}/" in line_stripped.lower() for ext in static_extensions[:10]):
+                continue
+            filtered_lines.append(line_stripped)
+    unique_lines = sorted(set(filtered_lines))
+    with open(output_file, "w") as f:
+        for line in unique_lines:
+            f.write(line + "\n")
+    return unique_lines
 
-unique_lines = sorted(set(filtered_lines))
+if active_results:
+    active_urls = process_files(active_results, active_output)
+    print(f"[INFO] Active URLs: {len(active_urls)} disimpan ke {active_output}")
+if passive_results:
+    passive_urls = process_files(passive_results, passive_output)
+    print(f"[INFO] Passive URLs: {len(passive_urls)} disimpan ke {passive_output}")
 
-with open(output, "w") as f:
-    for line in unique_lines:
-        f.write(line + "\n")
-
-temp_files = [katana_file, gospider_file, hakrawler_file]
+temp_files = [katana_file, gospider_file, hakrawler_file, waymore_file, urlfinder_file]
 for f in temp_files:
     if os.path.exists(f):
         os.remove(f)
@@ -206,5 +241,4 @@ if os.path.exists(gospider_dir):
     import shutil
     shutil.rmtree(gospider_dir)
 
-print(f"[INFO] Output final (deduplicated, filtered) saved to: {output}")
-print(f"[INFO] Total unique URLs: {len(unique_lines)}")
+print(f"[INFO] Selesai")
