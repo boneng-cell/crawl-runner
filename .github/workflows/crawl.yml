@@ -22,7 +22,7 @@ jobs:
             ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
       - name: Install Katana
-        run: go install github.com/projectdiscovery/katana/cmd/katana@v1.0.4
+        run: go install github.com/projectdiscovery/katana/cmd/katana@latest
       - name: Install Gospider
         run: go install github.com/jaeles-project/gospider@latest
       - name: Install Hakrawler
