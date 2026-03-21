@@ -9,37 +9,81 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.9'
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      - name: Install Katana
-        run: go install github.com/projectdiscovery/katana/cmd/katana@latest
-      - name: Install Gospider
-        run: go install github.com/jaeles-project/gospider@latest
-      - name: Install Hakrawler
-        run: go install github.com/hakluke/hakrawler@latest
-      - name: Install Waymore
-        run: pip install waymore
-      - name: Install Urlfinder
-        run: go install github.com/projectdiscovery/urlfinder/cmd/urlfinder@latest
-      - name: Install Httpx
-        run: go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-      - name: Run Tool
-        env:
-          TARGET: ${{ github.event.inputs.target }}
-          USE_HEADERS: "false"
-        run: python3 crawl-runner.py
-      - name: Upload Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: crawl-result-${{ github.event.inputs.target }}
-          path: "*/"
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Cache Python deps
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - name: Install Python deps
+      run: pip install -r requirements.txt
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-mod-
+    - name: Cache Go binaries
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-go-bin-v2-${{ hashFiles('tools_version.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-go-bin-
+    - name: Add Go bin to PATH
+      run: echo "$HOME/go/bin" >> $GITHUB_PATH
+    - name: Check and install missing tools
+      run: |
+        cat > tools_version.txt << EOF
+        katana@latest
+        gospider@latest
+        hakrawler@latest
+        urlfinder@latest
+        httpx@latest
+        EOF
+        check_and_install() {
+          if ! command -v $1 &> /dev/null; then
+            echo "Installing $1..."
+            go install $2
+          else
+            echo "$1 already installed, skipping..."
+          fi
+        }
+        check_and_install katana github.com/projectdiscovery/katana/cmd/katana@latest
+        check_and_install gospider github.com/jaeles-project/gospider@latest
+        check_and_install hakrawler github.com/hakluke/hakrawler@latest
+        check_and_install urlfinder github.com/projectdiscovery/urlfinder/cmd/urlfinder@latest
+        check_and_install httpx github.com/projectdiscovery/httpx/cmd/httpx@latest
+    - name: Install Waymore (pip with cache)
+      run: |
+        if ! pip show waymore &> /dev/null; then
+          echo "Installing waymore..."
+          pip install waymore
+        else
+          echo "waymore already installed, skipping..."
+        fi
+    - name: Run Tool
+      env:
+        TARGET: ${{ github.event.inputs.target }}
+        USE_HEADERS: "false"
+      run: python3 crawl-runner.py
+    - name: Upload Result
+      uses: actions/upload-artifact@v4
+      with:
+        name: crawl-result-${{ github.event.inputs.target }}
+        path: "*/"
+        retention-days: 30
